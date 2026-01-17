@@ -8,13 +8,9 @@ import '../../domain/interfaces/i_book_service.dart';
 class PdfViewerWidget extends StatefulWidget {
   final String bookName;
   final String filePath;
-  
-  //构造函数
-  const PdfViewerWidget({
-    super.key,
-    required this.bookName,
-    required this.filePath,
-  });
+
+  // 构造函数：移除 const 以支持内部变量初始化
+  PdfViewerWidget({super.key, required this.bookName, required this.filePath});
 
   @override
   State<PdfViewerWidget> createState() => _PdfViewerWidgetState();
@@ -23,36 +19,48 @@ class PdfViewerWidget extends StatefulWidget {
 class _PdfViewerWidgetState extends State<PdfViewerWidget> {
   late final IBookService _bookService;
   final PdfViewerController _controller = PdfViewerController();
-  final GlobalKey<ScaffoldState> _scaffoldKey =
-      GlobalKey<ScaffoldState>(); // 用于控制侧边栏
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  
+  // 搜索控制器
+  final PdfTextSearcher _searcher = PdfTextSearcher();
 
   int _currentPage = 1;
   int _totalPages = 0;
   double _currentZoom = 1.0;
   Timer? _savePageTimer;
   bool _showControls = true;
+  bool _isSearching = false; 
 
-  // 目录数据：使用 dynamic 避免 2.1.0 版本类名不匹配导致的爆红
+  final TextEditingController _searchTextController = TextEditingController();
   List<dynamic>? _outlines;
 
   @override
   void initState() {
     super.initState();
     _bookService = ServiceLocator.get<IBookService>();
-    _loadLastReadPage();
-
     _controller.addListener(() {
       if (mounted) {
-        setState(() {
-          _currentZoom = _controller.currentZoom;
-        });
+        setState(() => _currentZoom = _controller.currentZoom);
       }
     });
+    // 初始化时加载上次阅读进度
+    _loadLastReadPage();
+  }
+
+  // 搜索逻辑
+  void _onSearch(String text) {
+    if (text.isEmpty) {
+      _searcher.startTextSearch(""); // 清空搜索内容
+    } else {
+      _searcher.startTextSearch(text);
+    }
   }
 
   @override
   void dispose() {
     _savePageTimer?.cancel();
+    _searchTextController.dispose();
+    _searcher.dispose(); // 销毁搜索器
     super.dispose();
   }
 
@@ -61,12 +69,13 @@ class _PdfViewerWidgetState extends State<PdfViewerWidget> {
       final lastPage = await _bookService.getLastReadPage(widget.bookName);
       if (lastPage != null && mounted) {
         setState(() => _currentPage = lastPage);
-        Future.delayed(const Duration(milliseconds: 500), () {
+        // 延迟跳转确保文档已加载
+        Future.delayed(const Duration(milliseconds: 300), () {
           if (mounted) _controller.goToPage(pageNumber: _currentPage);
         });
       }
     } catch (e) {
-      debugPrint('加载进度失败: $e');
+      debugPrint('进度加载失败: $e');
     }
   }
 
@@ -80,20 +89,20 @@ class _PdfViewerWidgetState extends State<PdfViewerWidget> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      key: _scaffoldKey, // 绑定 Key
+      key: _scaffoldKey,
       backgroundColor: const Color(0xFFF0F0F2),
-      // --- 添加侧边栏 Drawer ---
       drawer: _buildDrawer(),
       body: Stack(
         children: [
+          // PDF 阅读核心区
           GestureDetector(
             onTap: () => setState(() => _showControls = !_showControls),
             child: PdfViewer.file(
               widget.filePath,
               controller: _controller,
               params: PdfViewerParams(
-                maxScale: 5.0,
-                minScale: 1.0,
+                // 关键点：绑定搜索器
+                //textSearcher: _searcher, 
                 margin: 16.0,
                 backgroundColor: const Color(0xFFF0F0F2),
                 onPageChanged: (page) {
@@ -103,16 +112,9 @@ class _PdfViewerWidgetState extends State<PdfViewerWidget> {
                   }
                 },
                 onViewerReady: (document, controller) async {
-                  setState(() {
-                    _totalPages = document.pages.length;
-                  });
-                  // 加载目录
+                  setState(() => _totalPages = document.pages.length);
                   final outline = await document.loadOutline();
-                  if (mounted) {
-                    setState(() {
-                      _outlines = outline;
-                    });
-                  }
+                  if (mounted) setState(() => _outlines = outline);
                 },
               ),
             ),
@@ -120,76 +122,21 @@ class _PdfViewerWidgetState extends State<PdfViewerWidget> {
 
           // 顶部工具栏
           if (_showControls)
-            Positioned(top: 20, left: 20, right: 20, child: _buildTopToolbar()),
+            Positioned(
+              top: 20, left: 20, right: 20,
+              child: Column(
+                children: [
+                  _buildTopToolbar(),
+                  if (_isSearching) _buildSearchBar(), 
+                ],
+              ),
+            ),
 
           // 底部翻页栏
           if (_showControls)
             Positioned(bottom: 30, left: 0, right: 0, child: _buildBottomNav()),
         ],
       ),
-    );
-  }
-
-  // 构建目录侧边栏
-  Widget _buildDrawer() {
-    return Drawer(
-      child: Column(
-        children: [
-          const DrawerHeader(
-            decoration: BoxDecoration(color: Color(0xFF2C3E50)),
-            child: Center(
-              child: Text(
-                '书籍目录',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: _outlines == null || _outlines!.isEmpty
-                ? const Center(child: Text('暂无目录信息'))
-                : ListView.builder(
-                    itemCount: _outlines!.length,
-                    itemBuilder: (context, index) {
-                      final node = _outlines![index];
-                      // 这里的 node 强转为 PdfOutlineNode
-                      return _buildOutlineItem(node as PdfOutlineNode, 0);
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 递归构建目录项
-  Widget _buildOutlineItem(PdfOutlineNode node, int depth) {
-    return Column(
-      children: [
-        ListTile(
-          contentPadding: EdgeInsets.only(
-            left: 16.0 + (depth * 16.0),
-            right: 16,
-          ),
-          title: Text(
-            node.title,
-            style: TextStyle(fontSize: 13, color: Colors.black87),
-          ),
-          onTap: () {
-            if (node.dest?.pageNumber != null) {
-              _controller.goToPage(pageNumber: node.dest!.pageNumber);
-              Navigator.pop(context); // 关闭侧边栏
-            }
-          },
-        ),
-        if (node.children.isNotEmpty)
-          ...node.children
-              .map((child) => _buildOutlineItem(child, depth + 1))
-              .toList(),
-      ],
     );
   }
 
@@ -204,36 +151,103 @@ class _PdfViewerWidgetState extends State<PdfViewerWidget> {
       ),
       child: Row(
         children: [
-          // --- 新增：菜单按钮用于打开目录 ---
           IconButton(
-            icon: const Icon(Icons.menu, color: Color(0xFF2C3E50)),
+            icon: const Icon(Icons.menu),
             onPressed: () => _scaffoldKey.currentState?.openDrawer(),
           ),
-          const VerticalDivider(width: 10, indent: 15, endIndent: 15),
-          const SizedBox(width: 5),
           Expanded(
             child: Text(
               widget.bookName,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              style: const TextStyle(fontWeight: FontWeight.bold),
               overflow: TextOverflow.ellipsis,
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.remove_circle_outline),
-            onPressed: () =>
-                _controller.setZoom(Offset.zero, _controller.currentZoom / 1.2),
+            icon: Icon(_isSearching ? Icons.search_off : Icons.search),
+            onPressed: () => setState(() => _isSearching = !_isSearching),
           ),
-          Text(
-            "${(_currentZoom * 100).toInt()}%",
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+          // 显示当前缩放比例，消除 _currentZoom 标黄
+          Text("${(_currentZoom * 100).toInt()}%", style: const TextStyle(fontSize: 10)),
+          IconButton(
+            icon: const Icon(Icons.remove),
+            onPressed: () => _controller.setZoom(Offset.zero, _controller.currentZoom / 1.2),
           ),
           IconButton(
-            icon: const Icon(Icons.add_circle_outline),
-            onPressed: () =>
-                _controller.setZoom(Offset.zero, _controller.currentZoom * 1.2),
+            icon: const Icon(Icons.add),
+            onPressed: () => _controller.setZoom(Offset.zero, _controller.currentZoom * 1.2),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 5)],
+      ),
+      child: TextField(
+        controller: _searchTextController,
+        onSubmitted: _onSearch,
+        decoration: InputDecoration(
+          hintText: "输入关键字搜索...",
+          border: InputBorder.none,
+          // 搜索导航按钮
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.navigate_before),
+                onPressed: () => _searcher.goToPrevMatch(),
+              ),
+              IconButton(
+                icon: const Icon(Icons.navigate_next),
+                onPressed: () => _searcher.goToNextMatch(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      child: Column(
+        children: [
+          const DrawerHeader(child: Center(child: Text('书籍目录'))),
+          Expanded(
+            child: _outlines == null
+                ? const Center(child: CircularProgressIndicator())
+                : ListView.builder(
+                    itemCount: _outlines!.length,
+                    itemBuilder: (context, index) => _buildOutlineItem(
+                      _outlines![index] as PdfOutlineNode,
+                      0,
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOutlineItem(PdfOutlineNode node, int depth) {
+    return ListTile(
+      title: Padding(
+        padding: EdgeInsets.only(left: depth * 16.0),
+        child: Text(node.title, style: const TextStyle(fontSize: 14)),
+      ),
+      onTap: () {
+        if (node.dest?.pageNumber != null) {
+          _controller.goToPage(pageNumber: node.dest!.pageNumber);
+          Navigator.pop(context);
+        }
+      },
     );
   }
 
@@ -250,23 +264,12 @@ class _PdfViewerWidgetState extends State<PdfViewerWidget> {
           children: [
             IconButton(
               icon: const Icon(Icons.chevron_left, color: Colors.white),
-              onPressed: _currentPage > 1
-                  ? () => _controller.goToPage(pageNumber: _currentPage - 1)
-                  : null,
+              onPressed: _currentPage > 1 ? () => _controller.goToPage(pageNumber: _currentPage - 1) : null,
             ),
-            Text(
-              '$_currentPage / $_totalPages',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-              ),
-            ),
+            Text('$_currentPage / $_totalPages', style: const TextStyle(color: Colors.white)),
             IconButton(
               icon: const Icon(Icons.chevron_right, color: Colors.white),
-              onPressed: _currentPage < _totalPages
-                  ? () => _controller.goToPage(pageNumber: _currentPage + 1)
-                  : null,
+              onPressed: _currentPage < _totalPages ? () => _controller.goToPage(pageNumber: _currentPage + 1) : null,
             ),
           ],
         ),
