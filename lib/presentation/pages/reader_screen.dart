@@ -16,7 +16,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   // 获取当前正在显示的 PDF Widget 的引用
-  final GlobalKey<_PdfViewerWidgetState> _pdfKey = GlobalKey(); // 用于通过 Key 找到子组件方法
+  // 在 reader_screen.dart 中修改
+  final GlobalKey _pdfKey = GlobalKey(); // 用于通过 Key 找到子组件方法
 
   @override
   void initState() {
@@ -52,12 +53,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
             //添加全文搜索框
             _buildTabHeader(openBooks, currentIndex),
             // 新增：搜索工具条
-            if (_isSearching) _buildSearchBar(), 
+            if (_isSearching) _buildSearchBar(),
             Expanded(
               child: currentBook != null
                   ? PdfViewerWidget(
                       // 修改点：添加 key 方便我们调用它的搜索方法
-                      key: ValueKey(currentBook), 
+                      key: ValueKey(currentBook),
                       bookName: currentBook,
                       filePath: _bookService.getBookFilePath(currentBook)!,
                     )
@@ -65,13 +66,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
             ),
             // 1. 顶部页签栏
             if (openBooks.isNotEmpty) _buildTabHeader(openBooks, currentIndex),
-            
+
             // 2. 主体阅读区
             Expanded(
               child: currentBook != null
                   ? PdfViewerWidget(
                       // 使用 ValueKey 是核心：当 currentBook 改变时，PdfViewerWidget 会被销毁并重新初始化
-                      key: ValueKey(currentBook), 
+                      key: ValueKey(currentBook),
                       bookName: currentBook,
                       filePath: _bookService.getBookFilePath(currentBook)!,
                     )
@@ -103,7 +104,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
                 color: isActive ? Colors.white : Colors.white.withOpacity(0.5),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(10),
+                ),
               ),
               child: Row(
                 children: [
@@ -117,7 +120,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     openBooks[index],
                     style: TextStyle(
                       fontSize: 12,
-                      fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: isActive
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                       color: isActive ? Colors.black : Colors.black54,
                     ),
                   ),
@@ -150,7 +155,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
           const SizedBox(height: 20),
           Text(
             '尚未打开任何书籍',
-            style: TextStyle(fontSize: 16, color: Colors.grey[500], fontWeight: FontWeight.w500),
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[500],
+              fontWeight: FontWeight.w500,
+            ),
           ),
           const SizedBox(height: 10),
           Text(
@@ -161,38 +170,39 @@ class _ReaderScreenState extends State<ReaderScreen> {
       ),
     );
   }
+
   Widget _buildSearchBar() {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    color: Colors.white,
-    child: Row(
-      children: [
-        const Icon(Icons.search, size: 20, color: Colors.grey),
-        const SizedBox(width: 10),
-        Expanded(
-          child: TextField(
-            controller: _searchController,
-            decoration: const InputDecoration(
-              hintText: '搜索文档内容...',
-              border: InputBorder.none,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: Colors.white,
+      child: Row(
+        children: [
+          const Icon(Icons.search, size: 20, color: Colors.grey),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                hintText: '搜索文档内容...',
+                border: InputBorder.none,
+              ),
+              onSubmitted: (value) {
+                // 这里我们需要一种方式调用子组件的 searchText
+                // 建议使用通知模式或通过 Service 传递，简单做法是给子组件加 static 引用
+              },
             ),
-            onSubmitted: (value) {
-              // 这里我们需要一种方式调用子组件的 searchText
-              // 建议使用通知模式或通过 Service 传递，简单做法是给子组件加 static 引用
+          ),
+          IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () {
+              setState(() {
+                _isSearching = false;
+                _searchController.clear();
+              });
             },
           ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () {
-            setState(() {
-              _isSearching = false;
-              _searchController.clear();
-            });
-          },
-        ),
-      ],
-    ),
-  );
-}
+        ],
+      ),
+    );
+  }
 }

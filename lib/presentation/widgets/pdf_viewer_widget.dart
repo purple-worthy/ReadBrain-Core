@@ -22,7 +22,7 @@ class _PdfViewerWidgetState extends State<PdfViewerWidget> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   
   // 搜索控制器
-  final PdfTextSearcher _searcher = PdfTextSearcher();
+  late final PdfTextSearcher _searcher;
 
   int _currentPage = 1;
   int _totalPages = 0;
@@ -35,17 +35,18 @@ class _PdfViewerWidgetState extends State<PdfViewerWidget> {
   List<dynamic>? _outlines;
 
   @override
-  void initState() {
-    super.initState();
-    _bookService = ServiceLocator.get<IBookService>();
-    _controller.addListener(() {
-      if (mounted) {
-        setState(() => _currentZoom = _controller.currentZoom);
-      }
-    });
-    // 初始化时加载上次阅读进度
-    _loadLastReadPage();
-  }
+void initState() {
+  super.initState();
+  _bookService = ServiceLocator.get<IBookService>();
+
+  // 在这里初始化，并传入 controller
+  _searcher = PdfTextSearcher(_controller); 
+
+  _controller.addListener(() {
+    if (mounted) setState(() => _currentZoom = _controller.currentZoom);
+  });
+  _loadLastReadPage();
+}
 
   // 搜索逻辑
   void _onSearch(String text) {

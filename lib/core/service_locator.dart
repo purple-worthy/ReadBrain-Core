@@ -13,6 +13,7 @@ import '../data/services/pdf_reader_engine.dart'; // 指向我们修好的 2.1.0
 class ServiceLocator {
   static final GetIt _getIt = GetIt.instance;
 
+
   static Future<void> setup() async {
     // 1. 优先注册基础存储服务（所有人的基石）
     _getIt.registerSingletonAsync<IStorageService>(() async {

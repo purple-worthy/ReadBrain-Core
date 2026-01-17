@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:read_brain/core/service_locator.dart';
 
 // 核心层与领域层导入
 import 'core/service_locator.dart';
@@ -15,15 +16,17 @@ import 'presentation/widgets/loading_overlay.dart';
 import 'presentation/widgets/book_cover_card.dart';
 import 'presentation/widgets/pdf_viewer_widget.dart';
 import 'presentation/widgets/system_info_widget.dart';
+import 'presentation/pages/reader_screen.dart';
+
 
 /// 应用入口点
 void main() async {
   // 1. 确保引擎初始化
   WidgetsFlutterBinding.ensureInitialized();
-  
+ 
   // 2. 窗口管理初始化
   await windowManager.ensureInitialized();
-  
+
   // 3. 配置窗口属性（新增：增加最小尺寸限制，防止 UI 崩溃）
   WindowOptions windowOptions = const WindowOptions(
     size: Size(1200, 800),
@@ -34,10 +37,10 @@ void main() async {
     titleBarStyle: TitleBarStyle.normal,
     title: "ReadBrain 阅读器",
   );
-  
+
   // 4. 初始化组装中心（含 IStorageService, IReaderEngine 等）
   await ServiceLocator.setup();
-  
+
   // 5. 业务逻辑初始化：预加载书籍列表（产品顾问：提升首屏体验）
   await ServiceLocator.get<IBookService>().initialize();
 
@@ -46,8 +49,27 @@ void main() async {
     await windowManager.show();
     await windowManager.focus();
   });
-  
+
   runApp(const ReadBrainApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'ReadBrain',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        useMaterial3: true,
+        cardTheme: const CardThemeData(elevation: 1),
+      ),
+      home: const ReaderScreen(),
+    );
+  }
+
 }
 
 class ReadBrainApp extends StatelessWidget {
@@ -65,9 +87,12 @@ class ReadBrainApp extends StatelessWidget {
           brightness: Brightness.light,
         ),
         // 优化全局卡片外观
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
+          // 加上 Data 后缀
           elevation: 1,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       ),
       home: const MainScreen(),
@@ -86,7 +111,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedNavIndex = 0;
-  
+
   final List<NavItem> _navItems = [
     NavItem(title: '书籍库', icon: FontAwesomeIcons.book),
     NavItem(title: '导入', icon: FontAwesomeIcons.plusCircle),
@@ -144,8 +169,14 @@ class _MainScreenState extends State<MainScreen> {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(vertical: 30),
-            child: const Text('ReadBrain', 
-              style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'ReadBrain',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
           const Divider(color: Colors.white24, height: 1),
           Expanded(
@@ -155,13 +186,23 @@ class _MainScreenState extends State<MainScreen> {
                 final item = _navItems[index];
                 final isSelected = _selectedNavIndex == index;
                 return ListTile(
-                  leading: Icon(item.icon, color: isSelected ? Colors.white : Colors.white70, size: 18),
-                  title: Text(item.title, style: TextStyle(color: isSelected ? Colors.white : Colors.white70, fontSize: 14)),
+                  leading: Icon(
+                    item.icon,
+                    color: isSelected ? Colors.white : Colors.white70,
+                    size: 18,
+                  ),
+                  title: Text(
+                    item.title,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
                   selected: isSelected,
                   selectedTileColor: Colors.white.withOpacity(0.1),
                   onTap: () => setState(() {
                     _selectedNavIndex = index;
-                    _bookService.switchToBook(-1); 
+                    _bookService.switchToBook(-1);
                   }),
                 );
               },
@@ -175,18 +216,29 @@ class _MainScreenState extends State<MainScreen> {
   Widget _buildTabBar() {
     final openBooks = _bookService.getOpenBooks();
     final currentIndex = _bookService.getCurrentIndex();
-    
+
     if (openBooks.isEmpty) {
       return Container(
         height: 50,
-        decoration: BoxDecoration(color: Colors.grey[50], border: Border(bottom: BorderSide(color: Colors.grey[200]!))),
-        child: const Center(child: Text('暂无打开的书籍', style: TextStyle(color: Colors.grey, fontSize: 12))),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+        ),
+        child: const Center(
+          child: Text(
+            '暂无打开的书籍',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+        ),
       );
     }
 
     return Container(
       height: 50,
-      decoration: BoxDecoration(color: Colors.grey[50], border: Border(bottom: BorderSide(color: Colors.grey[200]!))),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+      ),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         itemCount: openBooks.length,
@@ -200,16 +252,28 @@ class _MainScreenState extends State<MainScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
                 color: isActive ? Colors.white : Colors.transparent,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(8),
+                ),
                 border: isActive ? Border.all(color: Colors.grey[300]!) : null,
               ),
               child: Row(
                 children: [
-                  Text(bookName, style: TextStyle(color: isActive ? Colors.blue[700] : Colors.grey[600], fontSize: 13)),
+                  Text(
+                    bookName,
+                    style: TextStyle(
+                      color: isActive ? Colors.blue[700] : Colors.grey[600],
+                      fontSize: 13,
+                    ),
+                  ),
                   const SizedBox(width: 8),
                   InkWell(
                     onTap: () => _bookService.closeBook(index),
-                    child: Icon(FontAwesomeIcons.xmark, size: 12, color: Colors.grey[400]),
+                    child: Icon(
+                      FontAwesomeIcons.xmark,
+                      size: 12,
+                      color: Colors.grey[400],
+                    ),
                   ),
                 ],
               ),
@@ -223,15 +287,23 @@ class _MainScreenState extends State<MainScreen> {
   Widget _buildContentArea() {
     final currentBook = _bookService.getCurrentBook();
     if (currentBook != null) {
-      return PdfViewerWidget(bookName: currentBook, filePath: _bookService.getBookFilePath(currentBook)!);
+      return PdfViewerWidget(
+        bookName: currentBook,
+        filePath: _bookService.getBookFilePath(currentBook)!,
+      );
     }
-    
+
     switch (_selectedNavIndex) {
-      case 0: return const BookLibraryPage();
-      case 1: return const ImportPage();
-      case 2: return const CatalogPage();
-      case 3: return const SettingsPage();
-      default: return const Center(child: Text('页面未找到'));
+      case 0:
+        return const BookLibraryPage();
+      case 1:
+        return const ImportPage();
+      case 2:
+        return const CatalogPage();
+      case 3:
+        return const SettingsPage();
+      default:
+        return const Center(child: Text('页面未找到'));
     }
   }
 }
@@ -250,13 +322,17 @@ class BookLibraryPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final bookService = ServiceLocator.get<IBookService>();
     final books = bookService.getAllBooks();
-    
+
     if (books.isEmpty) return const Center(child: Text('书架空空如也，去导入一本吧！'));
 
     return GridView.builder(
       padding: const EdgeInsets.all(24),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 5, childAspectRatio: 0.7, crossAxisSpacing: 24, mainAxisSpacing: 24),
+        crossAxisCount: 5,
+        childAspectRatio: 0.7,
+        crossAxisSpacing: 24,
+        mainAxisSpacing: 24,
+      ),
       itemCount: books.length,
       itemBuilder: (context, index) => BookCoverCard(
         bookName: books[index],
@@ -282,16 +358,25 @@ class _ImportPageState extends State<ImportPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(FontAwesomeIcons.fileArrowUp, size: 64, color: Colors.blueGrey),
+            const Icon(
+              FontAwesomeIcons.fileArrowUp,
+              size: 64,
+              color: Colors.blueGrey,
+            ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
               icon: const Icon(FontAwesomeIcons.plus),
               label: const Text('选择本地 PDF 导入'),
               onPressed: () async {
-                final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['pdf']);
+                final result = await FilePicker.platform.pickFiles(
+                  type: FileType.custom,
+                  allowedExtensions: ['pdf'],
+                );
                 if (result != null && result.files.single.path != null) {
                   setState(() => _loading = true);
-                  await ServiceLocator.get<IBookService>().importBook(result.files.single.path!);
+                  await ServiceLocator.get<IBookService>().importBook(
+                    result.files.single.path!,
+                  );
                   if (mounted) {
                     setState(() => _loading = false);
                     ErrorSnackbar.showSuccess(context, '导入成功！');
@@ -319,7 +404,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final configService = ServiceLocator.get<IConfigService>();
     final bookService = ServiceLocator.get<IBookService>();
-    
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SingleChildScrollView(
@@ -327,9 +412,12 @@ class SettingsPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('系统设置', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+            const Text(
+              '系统设置',
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 24),
-            
+
             // 自动恢复
             ValueListenableBuilder<bool>(
               valueListenable: configService.autoRestoreState,
@@ -344,11 +432,18 @@ class SettingsPage extends StatelessWidget {
 
             const SizedBox(height: 16),
             const SystemInfoWidget(),
-            
+
             const SizedBox(height: 32),
-            const Text('数据管理', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+            const Text(
+              '数据管理',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.redAccent,
+              ),
+            ),
             const Divider(),
-            
+
             ListTile(
               title: const Text('清除所有书籍数据'),
               subtitle: const Text('此操作不可撤销'),
@@ -369,15 +464,18 @@ class SettingsPage extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         title: const Text('确认清除？'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
               service.clearAllData();
               Navigator.pop(ctx);
               ErrorSnackbar.showSuccess(context, '数据已清空');
-            }, 
-            child: const Text('确定清除', style: TextStyle(color: Colors.white))
+            },
+            child: const Text('确定清除', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
