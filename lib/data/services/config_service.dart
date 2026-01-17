@@ -23,7 +23,7 @@ class ConfigService implements IConfigService {
   bool _autoRestore = true;
 
   // 自动恢复状态通知器（用于 UI 绑定）
-  final ValueNotifier<bool> autoRestoreNotifier = ValueNotifier<bool>(true);
+  //final ValueNotifier<bool> autoRestoreNotifier = ValueNotifier<bool>(true);
 
   ConfigService() {
     // 从服务定位器获取存储服务
@@ -36,7 +36,7 @@ class ConfigService implements IConfigService {
       // 加载自动恢复设置
       final savedAutoRestore = await _storageService.getBool(_keyAutoRestore);
       _autoRestore = savedAutoRestore ?? true;
-      autoRestoreNotifier.value = _autoRestore;
+      autoRestoreState.value = _autoRestore;
     } catch (e) {
       debugPrint('ConfigService 初始化失败: $e');
     }
@@ -51,8 +51,9 @@ class ConfigService implements IConfigService {
   Future<void> setAutoRestore(bool value) async {
     try {
       _autoRestore = value;
-      autoRestoreNotifier.value = value;
+      autoRestoreState.value = value;
       await _storageService.saveBool(_keyAutoRestore, value);
+      autoRestoreState.value = value; // 更新监听器，这样 UI 才会跟着变
     } catch (e) {
       debugPrint('设置自动恢复状态失败: $e');
     }
@@ -110,7 +111,7 @@ class ConfigService implements IConfigService {
       await _storageService.remove(_keyReadingBackgroundColor);
       await _storageService.remove(_keyFontSize);
       _autoRestore = true;
-      autoRestoreNotifier.value = true;
+      autoRestoreState.value = true;
     } catch (e) {
       debugPrint('清除所有配置失败: $e');
     }
@@ -161,4 +162,6 @@ class ConfigService implements IConfigService {
       debugPrint('设置字体大小失败: $e');
     }
   }
+  @override
+final ValueNotifier<bool> autoRestoreState = ValueNotifier<bool>(false);
 }

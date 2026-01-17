@@ -56,7 +56,7 @@ class BookCoverCard extends StatelessWidget {
     return colors[hash.abs() % colors.length];
   }
 
-  @override
+  /* @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
@@ -136,6 +136,84 @@ class BookCoverCard extends StatelessWidget {
                       blurRadius: 4,
                     ),
                   ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}*/
+ 
+@override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click, // 桌面端鼠标指针效果
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: _buildCover(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCover() {
+    if (coverPath != null) {
+      final file = File(coverPath!);
+      if (file.existsSync()) {
+        return Image.file(
+          file,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) => _buildGradientCard(),
+        );
+      }
+    }
+    return _buildGradientCard();
+  }
+
+  Widget _buildGradientCard() {
+    final colors = _generateGradientColors(bookName);
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: colors,
+        ),
+      ),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.book, size: 40, color: Colors.white70),
+              const SizedBox(height: 8),
+              Text(
+                bookName,
+                textAlign: TextAlign.center,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  shadows: [Shadow(color: Colors.black26, blurRadius: 4)],
                 ),
               ),
             ],

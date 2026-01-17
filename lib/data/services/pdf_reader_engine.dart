@@ -1,210 +1,128 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'dart:async'; // 必须导入这个，解决 Completer 报错
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
+import 'package:path/path.dart' as p;
 import '../../domain/interfaces/i_reader_engine.dart';
 
-/// PDF 阅读引擎实现（Data 层）
-/// 基于 pdfrx 的真实 PDF 解析和渲染引擎
 class PdfReaderEngine implements IReaderEngine {
-  // PDF 文档缓存（文件路径 -> PdfDocument）
   final Map<String, PdfDocument> _documentCache = {};
-  
-  // 页面渲染缓存（文件路径_页码 -> ui.Image）
-  final Map<String, ui.Image> _pageImageCache = {};
 
   @override
-  Future<void> initialize() async {
-    // 初始化引擎，清理过期缓存等
-  }
+  Future<void> initialize() async {}
 
-  /// 获取或加载 PDF 文档
-  Future<PdfDocument?> _getDocument(String filePath) async {
+  Future<PdfDocument?> _getOrOpenDocument(String filePath) async {
     try {
       if (_documentCache.containsKey(filePath)) {
         return _documentCache[filePath];
       }
-
       final document = await PdfDocument.openFile(filePath);
       _documentCache[filePath] = document;
       return document;
     } catch (e) {
-      debugPrint('加载 PDF 文档失败: $e');
+      debugPrint('PDF 引擎错误: $e');
       return null;
     }
   }
 
   @override
   Future<BookContent> parseBook(String filePath) async {
-    try {
-      final document = await _getDocument(filePath);
-      if (document == null) {
-        throw Exception('无法加载 PDF 文档');
-      }
+    final doc = await _getOrOpenDocument(filePath);
+    final totalPages = doc?.pages.length ?? 0;
 
-      final pageCount = document.pagesCount;
-      final pages = <String>[];
-      
-      // 解析每一页（简化版本，实际可以根据需要提取文本）
-      for (int i = 0; i < pageCount; i++) {
-        pages.add('第 ${i + 1} 页');
-      }
-
-      return BookContent(
-        bookName: filePath.split('/').last,
-        pages: pages,
-        extraData: {
-          'pageCount': pageCount,
-          'filePath': filePath,
-        },
-      );
-    } catch (e) {
-      debugPrint('解析 PDF 失败: $e');
-      rethrow;
-    }
+    return BookContent(
+      bookName: p.basename(filePath),
+      pages: List.generate(totalPages, (i) => '第 ${i + 1} 页'),
+      extraData: {
+        'pageCount': totalPages,
+        'filePath': filePath,
+      },
+    );
   }
 
   @override
   Widget renderContent(BookContent content) {
     final filePath = content.extraData?['filePath'] as String?;
-    if (filePath == null) {
-      return const Center(child: Text('无效的书籍路径'));
-    }
+    if (filePath == null) return const Center(child: Text('路径无效'));
 
-    return PdfViewer.file(
-      filePath,
-      params: PdfViewerParams(
-        enableKeyboard: true,
-        enablePointerNavigation: true,
-      ),
-    );
-  }
-
-  /// 创建支持缩放和翻页的 PDF 查看器
-  Widget buildPdfViewer(String filePath, {
-    required int currentPage,
-    required Function(int) onPageChanged,
-    double scale = 1.0,
-    Function(double)? onScaleChanged,
-  }) {
-    return PdfViewer.file(
-      filePath,
-      params: PdfViewerParams(
-        pageNumber: currentPage,
-        enableKeyboard: true,
-        enablePointerNavigation: true,
-        onPageChanged: (page) {
-          onPageChanged(page);
-        },
-      ),
-    );
+    return PdfViewer.file(filePath);
   }
 
   @override
   Future<BookMetadata> getMetadata(String filePath) async {
-    try {
-      final document = await _getDocument(filePath);
-      if (document == null) {
-        throw Exception('无法加载 PDF 文档');
-      }
-
-      return BookMetadata(
-        title: filePath.split('/').last,
-        pageCount: document.pagesCount,
-        extraData: {
-          'filePath': filePath,
-        },
-      );
-    } catch (e) {
-      debugPrint('获取元数据失败: $e');
-      return BookMetadata(
-        title: filePath.split('/').last,
-      );
-    }
+    final doc = await _getOrOpenDocument(filePath);
+    return BookMetadata(
+      title: p.basename(filePath),
+      pageCount: doc?.pages.length ?? 0,
+    );
   }
 
   @override
   Future<bool> preloadPages(String filePath, int start, int count) async {
+    final doc = await _getOrOpenDocument(filePath);
+    if (doc == null) return false;
     try {
-      final document = await _getDocument(filePath);
-      if (document == null) {
-        return false;
-      }
-
-      final totalPages = document.pagesCount;
-      final end = (start + count).clamp(0, totalPages);
-      
-      // 异步预加载页面到内存缓存
-      final futures = <Future>[];
+      final end = (start + count).clamp(0, doc.pages.length);
       for (int i = start; i < end; i++) {
-        final cacheKey = '${filePath}_$i';
-        if (_pageImageCache.containsKey(cacheKey)) {
-          continue; // 已缓存，跳过
-        }
-
-        // 异步预加载页面（pdfrx 会自动处理缓存）
-        futures.add(_preloadPageToCache(document, i, cacheKey));
+        final _ = doc.pages[i]; 
       }
-
-      // 等待所有预加载完成
-      await Future.wait(futures);
       return true;
-    } catch (e) {
-      debugPrint('预加载页面失败: $e');
+    } catch (_) {
       return false;
-    }
-  }
-
-  /// 预加载单页到缓存
-  Future<void> _preloadPageToCache(
-    PdfDocument document,
-    int pageIndex,
-    String cacheKey,
-  ) async {
-    try {
-      // pdfrx 会自动处理页面缓存
-      // 这里触发页面预加载（通过获取页面对象）
-      final page = await document.getPage(pageIndex);
-      if (page != null) {
-        // 页面已预加载到 pdfrx 的内部缓存
-        // 这里可以额外实现位图预渲染逻辑
-      }
-    } catch (e) {
-      debugPrint('预加载单页失败: $e');
     }
   }
 
   @override
   Future<Uint8List?> getCover(String filePath) async {
+    PdfDocument? doc;
     try {
-      final document = await _getDocument(filePath);
-      if (document == null) {
-        return null;
-      }
+      doc = await PdfDocument.openFile(filePath);
+      if (doc == null || doc.pages.isEmpty) return null;
 
-      // 获取第一页作为封面
-      final page = await document.getPage(0);
-      if (page == null) {
-        return null;
-      }
+      final page = doc.pages[0];
+      
+      // 2.1.0 的 render 返回 PdfImage?，需要加 await 并处理 null
+      final pdfImage = await page.render(
+        width: 300, 
+        height: 400,
+      );
 
-      // 这里可以渲染第一页为图片
-      // pdfrx 可能需要额外处理
-      // 暂时返回 null，使用默认封面
-      return null;
+      // 【核心修复】空安全检查
+      if (pdfImage == null) return null;
+
+      final completer = Completer<ui.Image>();
+      
+      // 使用 ! 强转，因为我们已经在上面检查过 pdfImage != null
+      ui.decodeImageFromPixels(
+        pdfImage.pixels, 
+        pdfImage.width, 
+        pdfImage.height, 
+        ui.PixelFormat.rgba8888,
+        (ui.Image image) {
+          completer.complete(image);
+        },
+      );
+
+      final uiImage = await completer.future;
+      final byteData = await uiImage.toByteData(format: ui.ImageByteFormat.png);
+      
+      uiImage.dispose();
+      
+      return byteData?.buffer.asUint8List();
     } catch (e) {
-      debugPrint('获取封面失败: $e');
+      debugPrint('封面合成失败: $e');
       return null;
+    } finally {
+      // 这里的 dispose 非常重要，防止文件被锁定
+      await doc?.dispose();
     }
   }
 
-  /// 清理缓存
-  void clearCache() {
+  void dispose() {
+    for (var doc in _documentCache.values) {
+      doc.dispose();
+    }
     _documentCache.clear();
-    // 清理页面图片缓存
-    _pageImageCache.forEach((key, image) {
-      image.dispose();
-    });
-    _pageImageCache.clear();
   }
 }

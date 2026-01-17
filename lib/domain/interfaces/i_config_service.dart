@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 /// 配置服务接口（Domain 层核心抽象）
 /// 定义所有配置相关的操作，不依赖具体实现
 abstract class IConfigService {
@@ -37,4 +38,6 @@ abstract class IConfigService {
   /// 设置字体大小
   /// [size] 字体大小
   Future<void> setFontSize(double size);
+
+  ValueNotifier<bool> get autoRestoreState;
 }

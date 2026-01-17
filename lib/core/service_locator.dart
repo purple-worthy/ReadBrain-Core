@@ -5,79 +5,60 @@ import '../domain/interfaces/i_book_service.dart';
 import '../domain/interfaces/i_reader_engine.dart';
 import '../data/services/local_storage_service.dart';
 import '../data/services/config_service.dart';
-import '../data/services/book_service.dart';
-import '../data/services/mock_reader_engine.dart';
-import '../data/services/pdf_reader_engine.dart';
+import '../data/services/book_service.dart'; // 指向你融合后的 BookService
+import '../data/services/pdf_reader_engine.dart'; // 指向我们修好的 2.1.0 引擎
 
-/// 服务定位器（Service Locator）
-/// 使用 GetIt 实现依赖注入，统一管理所有服务的注册和获取
+/// 终极组装中心（Service Locator）
+/// 融合了异步安全启动与强依赖管理
 class ServiceLocator {
   static final GetIt _getIt = GetIt.instance;
 
-  /// 初始化所有服务
-  /// 在应用启动时调用，注册所有服务单例
   static Future<void> setup() async {
-    // 注册存储服务（单例）
-    _getIt.registerSingletonAsync<IStorageService>(
-      () async {
-        final service = LocalStorageService();
-        await service.initialize();
-        return service;
-      },
-    );
+    // 1. 优先注册基础存储服务（所有人的基石）
+    _getIt.registerSingletonAsync<IStorageService>(() async {
+      final service = LocalStorageService();
+      await service.initialize();
+      return service;
+    });
 
-    // 注册配置服务（单例）
+    // 2. 注册阅读引擎（独立硬件级服务）
+    _getIt.registerSingletonAsync<IReaderEngine>(() async {
+      final service = PdfReaderEngine();
+      await service.initialize();
+      return service;
+    });
+
+    // 3. 注册配置服务（依赖 Storage）
+    // 使用 dependsOn 确保 IStorageService 初始化完成后再初始化自己
     _getIt.registerSingletonAsync<IConfigService>(
       () async {
         final service = ConfigService();
         await service.initialize();
         return service;
       },
+      dependsOn: [IStorageService],
     );
 
-    // 注册书籍服务（单例）
+    // 4. 注册书籍业务服务（核心大脑：依赖 Storage、Engine 和 Config）
     _getIt.registerSingletonAsync<IBookService>(
       () async {
         final service = BookService();
         await service.initialize();
         return service;
       },
+      dependsOn: [IStorageService, IReaderEngine, IConfigService],
     );
 
-    // 注册阅读引擎（单例）
-    // 注意：这里可以轻松切换不同的引擎实现
-    // 例如：如果要切换到大模型解析引擎，只需要修改这里的注册代码
-    _getIt.registerSingletonAsync<IReaderEngine>(
-      () async {
-        // 使用真实的 PDF 阅读引擎
-        final service = PdfReaderEngine();
-        await service.initialize();
-        return service;
-        // 如果需要使用模拟引擎，可以改为：
-        // final service = MockReaderEngine();
-        // await service.initialize();
-        // return service;
-      },
-    );
-
-    // 等待所有异步服务初始化完成
+    // 【架构师关键指令】：等待所有异步服务按照拓扑顺序完成初始化
     await _getIt.allReady();
   }
 
   /// 获取服务实例
-  /// [T] 服务类型
-  static T get<T extends Object>() {
-    return _getIt.get<T>();
-  }
+  static T get<T extends Object>() => _getIt.get<T>();
 
   /// 检查服务是否已注册
-  /// [T] 服务类型
-  static bool isRegistered<T extends Object>() {
-    return _getIt.isRegistered<T>();
-  }
+  static bool isRegistered<T extends Object>() => _getIt.isRegistered<T>();
 
-  /// 重置所有服务（主要用于测试）
-  static Future<void> reset() async {
-    await _getIt.reset();
-  }
+  /// 重置服务（系统清理时使用）
+  static Future<void> reset() async => await _getIt.reset();
 }

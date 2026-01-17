@@ -8,6 +8,7 @@ import '../../domain/interfaces/i_storage_service.dart';
 import '../../domain/interfaces/i_config_service.dart';
 import '../../domain/interfaces/i_reader_engine.dart';
 import '../../core/service_locator.dart';
+import 'package:path/path.dart' as p;
 
 /// 书籍服务实现（Data 层）
 /// 实现 IBookService 接口，负责书籍和标签页的管理
@@ -244,7 +245,7 @@ class BookService extends ChangeNotifier implements IBookService {
     return maxTabs;
   }
 
-  @override
+ @override
   Future<Either<String, String>> importBook(String filePath) async {
     try {
       // 检查文件是否存在
@@ -253,9 +254,9 @@ class BookService extends ChangeNotifier implements IBookService {
         return Left('文件不存在: $filePath');
       }
 
-      // 获取文件名作为书籍名称
-      final bookName = sourceFile.path.split(Platform.pathSeparator).last;
-      
+      // 1. 使用 path 库处理文件名（产品设计师建议：处理跨平台路径兼容性）
+      final bookName = p.basename(filePath);
+      // 2. 检查并准备书籍目录
       // 检查书籍是否已存在
       if (_allBooks.contains(bookName)) {
         // 如果已存在，检查文件路径是否相同
@@ -267,17 +268,13 @@ class BookService extends ChangeNotifier implements IBookService {
 
       // 获取应用文档目录
       final appDir = await getApplicationDocumentsDirectory();
-      final booksDir = Directory('${appDir.path}/books');
-      
-      // 确保书籍目录存在
-      if (!await booksDir.exists()) {
-        await booksDir.create(recursive: true);
-      }
+      final booksDir = Directory(p.join(appDir.path, 'books'));
+      if (!await booksDir.exists()) await booksDir.create(recursive: true);
 
       // 拷贝文件到应用目录
-      final targetPath = '${booksDir.path}/$bookName';
+      final targetPath = p.join(booksDir.path, bookName);
       final targetFile = File(targetPath);
-      
+      // 3. 避免重复操作的幂等性逻辑
       // 如果目标文件已存在，先删除
       if (await targetFile.exists()) {
         await targetFile.delete();
@@ -285,7 +282,8 @@ class BookService extends ChangeNotifier implements IBookService {
 
       // 拷贝文件
       await sourceFile.copy(targetPath);
-
+      // 4. 【高级 UI 点缀】智能封面生成
+      // 这里调用阅读引擎提取封面，让 UI 层的 BookCoverCard 能够显示真实的图像
       // 尝试获取封面
       try {
         final coverData = await _readerEngine.getCover(targetPath);
@@ -293,10 +291,10 @@ class BookService extends ChangeNotifier implements IBookService {
           await saveCoverCache(bookName, coverData);
         }
       } catch (e) {
-        debugPrint('获取封面失败: $e');
+        debugPrint('封面提取微瑕疵，但不影响书籍导入: $e');
       }
 
-      // 添加到书籍库
+      // 5. 更新状态库并持久化,添加到书籍库
       addBook(bookName);
       
       // 保存文件路径映射（保存应用内的路径）
@@ -306,10 +304,9 @@ class BookService extends ChangeNotifier implements IBookService {
       return Right(bookName);
     } catch (e) {
       debugPrint('导入书籍失败: $e');
-      return Left('导入书籍失败: $e');
+      return Left('导入书籍失败: ${e.toString()}');
     }
   }
-
   /// 保存书籍路径映射
   Future<void> _saveBookPaths() async {
     try {
