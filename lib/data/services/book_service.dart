@@ -1,7 +1,12 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:dartz/dartz.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../domain/interfaces/i_book_service.dart';
 import '../../domain/interfaces/i_storage_service.dart';
 import '../../domain/interfaces/i_config_service.dart';
+import '../../domain/interfaces/i_reader_engine.dart';
 import '../../core/service_locator.dart';
 
 /// 书籍服务实现（Data 层）
@@ -12,6 +17,9 @@ class BookService extends ChangeNotifier implements IBookService {
 
   // 存储服务（通过依赖注入获取）
   late final IStorageService _storageService;
+  
+  // 阅读引擎（通过依赖注入获取）
+  late final IReaderEngine _readerEngine;
 
   // 所有书籍列表（模拟书籍库）
   final List<String> _allBooks = [];
@@ -21,15 +29,20 @@ class BookService extends ChangeNotifier implements IBookService {
 
   // 当前选中的标签页索引
   int _currentIndex = -1;
+  
+  // 书籍文件路径映射（书籍名称 -> 文件路径）
+  final Map<String, String> _bookPaths = {};
 
   // 存储键常量
   static const String _keyOpenBooks = 'open_books';
   static const String _keyCurrentIndex = 'current_index';
   static const String _keyAllBooks = 'all_books';
+  static const String _keyBookPaths = 'book_paths';
 
   BookService() {
-    // 从服务定位器获取存储服务
+    // 从服务定位器获取存储服务和阅读引擎
     _storageService = ServiceLocator.get<IStorageService>();
+    _readerEngine = ServiceLocator.get<IReaderEngine>();
   }
 
   @override
@@ -40,6 +53,18 @@ class BookService extends ChangeNotifier implements IBookService {
       if (allBooksJson != null && allBooksJson.isNotEmpty) {
         _allBooks.clear();
         _allBooks.addAll(allBooksJson);
+      }
+      
+      // 加载书籍路径映射
+      final bookPathsJson = await _storageService.getStringList(_keyBookPaths);
+      if (bookPathsJson != null && bookPathsJson.isNotEmpty) {
+        // 格式：bookName|filePath
+        for (final entry in bookPathsJson) {
+          final parts = entry.split('|');
+          if (parts.length == 2) {
+            _bookPaths[parts[0]] = parts[1];
+          }
+        }
       }
 
       // 检查是否启用自动恢复
@@ -216,5 +241,159 @@ class BookService extends ChangeNotifier implements IBookService {
   @override
   int getMaxTabs() {
     return maxTabs;
+  }
+
+  @override
+  Future<Either<String, String>> importBook(String filePath) async {
+    try {
+      // 检查文件是否存在
+      final file = File(filePath);
+      if (!await file.exists()) {
+        return Left('文件不存在: $filePath');
+      }
+
+      // 获取文件名作为书籍名称
+      final bookName = file.path.split(Platform.pathSeparator).last;
+      
+      // 检查书籍是否已存在
+      if (_allBooks.contains(bookName)) {
+        return Right(bookName);
+      }
+
+      // 尝试获取封面
+      try {
+        final coverData = await _readerEngine.getCover(filePath);
+        if (coverData != null) {
+          await saveCoverCache(bookName, coverData);
+        }
+      } catch (e) {
+        debugPrint('获取封面失败: $e');
+      }
+
+      // 添加到书籍库
+      addBook(bookName);
+      
+      // 保存文件路径映射
+      _bookPaths[bookName] = filePath;
+      await _saveBookPaths();
+
+      return Right(bookName);
+    } catch (e) {
+      debugPrint('导入书籍失败: $e');
+      return Left('导入书籍失败: $e');
+    }
+  }
+
+  /// 保存书籍路径映射
+  Future<void> _saveBookPaths() async {
+    try {
+      final pathsList = _bookPaths.entries
+          .map((e) => '${e.key}|${e.value}')
+          .toList();
+      await _storageService.saveStringList(_keyBookPaths, pathsList);
+    } catch (e) {
+      debugPrint('保存书籍路径失败: $e');
+    }
+  }
+
+  /// 获取书籍文件路径
+  String? _getBookFilePath(String bookName) {
+    return _bookPaths[bookName];
+  }
+
+  @override
+  Future<String?> getCoverCachePath(String bookName) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final coverDir = Directory('${directory.path}/covers');
+      if (!await coverDir.exists()) {
+        await coverDir.create(recursive: true);
+      }
+      return '${coverDir.path}/${_sanitizeFileName(bookName)}.jpg';
+    } catch (e) {
+      debugPrint('获取封面缓存路径失败: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<bool> saveCoverCache(String bookName, dynamic coverData) async {
+    try {
+      final cachePath = await getCoverCachePath(bookName);
+      if (cachePath == null) return false;
+
+      if (coverData is Uint8List) {
+        // 如果是字节数组，直接写入
+        final file = File(cachePath);
+        await file.writeAsBytes(coverData);
+      } else if (coverData is String) {
+        // 如果是文件路径，复制文件
+        final sourceFile = File(coverData);
+        if (await sourceFile.exists()) {
+          final targetFile = File(cachePath);
+          await sourceFile.copy(targetFile.path);
+        } else {
+          return false;
+        }
+      } else {
+        return false;
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('保存封面缓存失败: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> clearCoverCache(String? bookName) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final coverDir = Directory('${directory.path}/covers');
+      
+      if (!await coverDir.exists()) {
+        return true; // 目录不存在，视为清除成功
+      }
+
+      if (bookName == null) {
+        // 清除所有封面缓存
+        await coverDir.delete(recursive: true);
+        await coverDir.create(recursive: true);
+      } else {
+        // 清除指定书籍的封面缓存
+        final cachePath = await getCoverCachePath(bookName);
+        if (cachePath != null) {
+          final file = File(cachePath);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        }
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('清除封面缓存失败: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> hasCoverCache(String bookName) async {
+    try {
+      final cachePath = await getCoverCachePath(bookName);
+      if (cachePath == null) return false;
+      
+      final file = File(cachePath);
+      return await file.exists();
+    } catch (e) {
+      debugPrint('检查封面缓存失败: $e');
+      return false;
+    }
+  }
+
+  /// 清理文件名，移除非法字符
+  String _sanitizeFileName(String fileName) {
+    return fileName.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
   }
 }

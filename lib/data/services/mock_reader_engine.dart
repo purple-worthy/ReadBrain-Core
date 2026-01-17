@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../../domain/interfaces/i_reader_engine.dart';
 
@@ -73,5 +74,26 @@ class MockReaderEngine implements IReaderEngine {
       pageCount: 3,
       publishDate: DateTime.now(),
     );
+  }
+
+  @override
+  Future<bool> preloadPages(String filePath, int start, int count) async {
+    // 模拟预加载页面
+    // 实际实现中，这里可以提前解析和缓存指定范围的页面
+    try {
+      // 模拟异步操作
+      await Future.delayed(const Duration(milliseconds: 100));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  @override
+  Future<Uint8List?> getCover(String filePath) async {
+    // 模拟获取封面
+    // 实际实现中，这里应该从文件中提取封面图片
+    // 当前返回 null 表示没有封面
+    return null;
   }
 }
