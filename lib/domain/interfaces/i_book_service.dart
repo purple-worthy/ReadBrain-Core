@@ -65,4 +65,19 @@ abstract class IBookService {
   /// [bookName] 书籍名称
   /// 返回 true 表示存在，false 表示不存在
   Future<bool> hasCoverCache(String bookName);
+
+  /// 保存书籍最后阅读页码
+  /// [bookName] 书籍名称
+  /// [pageNumber] 页码（从 0 开始）
+  Future<void> saveLastReadPage(String bookName, int pageNumber);
+
+  /// 获取书籍最后阅读页码
+  /// [bookName] 书籍名称
+  /// 返回页码（从 0 开始），如果没有记录则返回 null
+  Future<int?> getLastReadPage(String bookName);
+
+  /// 获取书籍文件路径
+  /// [bookName] 书籍名称
+  /// 返回文件路径，如果不存在则返回 null
+  String? getBookFilePath(String bookName);
 }

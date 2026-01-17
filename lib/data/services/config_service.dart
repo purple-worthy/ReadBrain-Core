@@ -11,7 +11,13 @@ class ConfigService implements IConfigService {
 
   // 配置键常量
   static const String _keyAutoRestore = 'auto_restore';
+  static const String _keyReadingBackgroundColor = 'reading_background_color';
+  static const String _keyFontSize = 'font_size';
   static const String _keyPrefix = 'config_';
+  
+  // 默认值
+  static const String _defaultBackgroundColor = 'ffffff'; // 纯白
+  static const double _defaultFontSize = 16.0;
 
   // 自动恢复状态缓存
   bool _autoRestore = true;
@@ -101,10 +107,58 @@ class ConfigService implements IConfigService {
       // 注意：这里只清除配置相关的键，不清除其他数据
       // 如果需要清除所有配置，需要遍历所有配置键
       await _storageService.remove(_keyAutoRestore);
+      await _storageService.remove(_keyReadingBackgroundColor);
+      await _storageService.remove(_keyFontSize);
       _autoRestore = true;
       autoRestoreNotifier.value = true;
     } catch (e) {
       debugPrint('清除所有配置失败: $e');
+    }
+  }
+
+  @override
+  Future<String> getReadingBackgroundColor() async {
+    try {
+      final color = await _storageService.getString(_keyReadingBackgroundColor);
+      return color ?? _defaultBackgroundColor;
+    } catch (e) {
+      debugPrint('获取阅读背景色失败: $e');
+      return _defaultBackgroundColor;
+    }
+  }
+
+  @override
+  Future<void> setReadingBackgroundColor(String color) async {
+    try {
+      await _storageService.saveString(_keyReadingBackgroundColor, color);
+    } catch (e) {
+      debugPrint('设置阅读背景色失败: $e');
+    }
+  }
+
+  @override
+  Future<double> getFontSize() async {
+    try {
+      // 存储为整数（分），使用时除以 10
+      final sizeInt = await _storageService.getInt(_keyFontSize);
+      if (sizeInt != null) {
+        return sizeInt / 10.0;
+      }
+      return _defaultFontSize;
+    } catch (e) {
+      debugPrint('获取字体大小失败: $e');
+      return _defaultFontSize;
+    }
+  }
+
+  @override
+  Future<void> setFontSize(double size) async {
+    try {
+      // 存储为整数（分），避免浮点数精度问题
+      final sizeInt = (size * 10).round();
+      await _storageService.saveInt(_keyFontSize, sizeInt);
+    } catch (e) {
+      debugPrint('设置字体大小失败: $e');
     }
   }
 }

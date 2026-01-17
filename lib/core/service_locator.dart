@@ -7,6 +7,7 @@ import '../data/services/local_storage_service.dart';
 import '../data/services/config_service.dart';
 import '../data/services/book_service.dart';
 import '../data/services/mock_reader_engine.dart';
+import '../data/services/pdf_reader_engine.dart';
 
 /// 服务定位器（Service Locator）
 /// 使用 GetIt 实现依赖注入，统一管理所有服务的注册和获取
@@ -48,10 +49,14 @@ class ServiceLocator {
     // 例如：如果要切换到大模型解析引擎，只需要修改这里的注册代码
     _getIt.registerSingletonAsync<IReaderEngine>(
       () async {
-        // 当前使用模拟引擎，后续可以替换为 PDFEngine 或其他实现
-        final service = MockReaderEngine();
+        // 使用真实的 PDF 阅读引擎
+        final service = PdfReaderEngine();
         await service.initialize();
         return service;
+        // 如果需要使用模拟引擎，可以改为：
+        // final service = MockReaderEngine();
+        // await service.initialize();
+        // return service;
       },
     );
 

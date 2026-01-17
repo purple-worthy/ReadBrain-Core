@@ -38,6 +38,7 @@ class BookService extends ChangeNotifier implements IBookService {
   static const String _keyCurrentIndex = 'current_index';
   static const String _keyAllBooks = 'all_books';
   static const String _keyBookPaths = 'book_paths';
+  static const String _keyLastReadPages = 'last_read_pages';
 
   BookService() {
     // 从服务定位器获取存储服务和阅读引擎
@@ -324,6 +325,64 @@ class BookService extends ChangeNotifier implements IBookService {
   /// 获取书籍文件路径
   String? _getBookFilePath(String bookName) {
     return _bookPaths[bookName];
+  }
+
+  @override
+  String? getBookFilePath(String bookName) {
+    return _bookPaths[bookName];
+  }
+
+  @override
+  Future<void> saveLastReadPage(String bookName, int pageNumber) async {
+    try {
+      // 加载现有的页码记录
+      final pagesJson = await _storageService.getStringList(_keyLastReadPages);
+      final pagesMap = <String, int>{};
+      
+      if (pagesJson != null && pagesJson.isNotEmpty) {
+        // 解析：bookName|pageNumber
+        for (final entry in pagesJson) {
+          final parts = entry.split('|');
+          if (parts.length == 2) {
+            pagesMap[parts[0]] = int.tryParse(parts[1]) ?? 0;
+          }
+        }
+      }
+
+      // 更新当前书籍的页码
+      pagesMap[bookName] = pageNumber;
+
+      // 保存回存储
+      final pagesList = pagesMap.entries
+          .map((e) => '${e.key}|${e.value}')
+          .toList();
+      await _storageService.saveStringList(_keyLastReadPages, pagesList);
+    } catch (e) {
+      debugPrint('保存最后阅读页码失败: $e');
+    }
+  }
+
+  @override
+  Future<int?> getLastReadPage(String bookName) async {
+    try {
+      final pagesJson = await _storageService.getStringList(_keyLastReadPages);
+      if (pagesJson == null || pagesJson.isEmpty) {
+        return null;
+      }
+
+      // 查找当前书籍的页码
+      for (final entry in pagesJson) {
+        final parts = entry.split('|');
+        if (parts.length == 2 && parts[0] == bookName) {
+          return int.tryParse(parts[1]);
+        }
+      }
+
+      return null;
+    } catch (e) {
+      debugPrint('获取最后阅读页码失败: $e');
+      return null;
+    }
   }
 
   @override

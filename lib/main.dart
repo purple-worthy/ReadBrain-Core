@@ -10,6 +10,9 @@ import 'domain/interfaces/i_reader_engine.dart';
 import 'presentation/widgets/error_snackbar.dart';
 import 'presentation/widgets/loading_overlay.dart';
 import 'presentation/widgets/book_cover_card.dart';
+import 'presentation/widgets/book_context_menu.dart';
+import 'presentation/widgets/pdf_viewer_widget.dart';
+import 'presentation/widgets/system_info_widget.dart';
 
 /// 应用入口点
 void main() async {
@@ -384,6 +387,63 @@ class _BookLibraryPageState extends State<BookLibraryPage> {
     setState(() {});
   }
 
+  /// 显示重命名对话框
+  void _showRenameDialog(BuildContext context, String bookName) {
+    final controller = TextEditingController(text: bookName);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('重命名书籍'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: '新书名',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              // TODO: 实现重命名逻辑
+              Navigator.of(context).pop();
+              ErrorSnackbar.showInfo(context, '重命名功能待实现');
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 显示移除对话框
+  void _showRemoveDialog(BuildContext context, String bookName) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('确认移除'),
+        content: Text('确定要从库中移除 "$bookName" 吗？\n文件不会被删除，只是从库中移除记录。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              // TODO: 实现移除逻辑（仅从库中移除，不删除文件）
+              Navigator.of(context).pop();
+              ErrorSnackbar.showInfo(context, '移除功能待实现');
+            },
+            child: const Text('确定', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final allBooks = _bookService.getAllBooks();
@@ -423,30 +483,98 @@ class _BookLibraryPageState extends State<BookLibraryPage> {
                       ],
                     ),
                   )
-                : GridView.builder(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 4,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
-                      childAspectRatio: 0.7,
-                    ),
-                    itemCount: allBooks.length,
-                    itemBuilder: (context, index) {
-                      final bookName = allBooks[index];
-                      return FutureBuilder<String?>(
-                        future: _bookService.getCoverCachePath(bookName),
-                        builder: (context, snapshot) {
-                          return BookCoverCard(
-                            bookName: bookName,
-                            coverPath: snapshot.data,
-                            onTap: () {
-                              final success = _bookService.openBook(bookName);
-                              if (!success) {
-                                ErrorSnackbar.show(
-                                  context,
-                                  '页签数量已达上限（${_bookService.getMaxTabs()} 个），请先关闭部分标签页',
-                                );
-                              }
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      // 响应式布局：根据宽度自动调整列数
+                      final crossAxisCount = (constraints.maxWidth / 200).floor().clamp(2, 8);
+                      
+                      return GridView.builder(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxisCount,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                          childAspectRatio: 0.7,
+                        ),
+                        itemCount: allBooks.length,
+                        itemBuilder: (context, index) {
+                          final bookName = allBooks[index];
+                          return FutureBuilder<String?>(
+                            future: _bookService.getCoverCachePath(bookName),
+                            builder: (context, snapshot) {
+                              return GestureDetector(
+                                onSecondaryTap: () {
+                                  // 右键菜单
+                                  showMenu(
+                                    context: context,
+                                    position: RelativeRect.fromLTRB(
+                                      constraints.maxWidth / 2,
+                                      constraints.maxHeight / 2,
+                                      constraints.maxWidth / 2,
+                                      constraints.maxHeight / 2,
+                                    ),
+                                    items: [
+                                      PopupMenuItem(
+                                        value: 'open',
+                                        child: Row(
+                                          children: [
+                                            const Icon(FontAwesomeIcons.bookOpen, size: 16),
+                                            const SizedBox(width: 12),
+                                            const Text('打开'),
+                                          ],
+                                        ),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'rename',
+                                        child: Row(
+                                          children: [
+                                            const Icon(FontAwesomeIcons.pen, size: 16),
+                                            const SizedBox(width: 12),
+                                            const Text('重命名'),
+                                          ],
+                                        ),
+                                      ),
+                                      const PopupMenuDivider(),
+                                      PopupMenuItem(
+                                        value: 'remove',
+                                        child: Row(
+                                          children: [
+                                            const Icon(FontAwesomeIcons.trash, size: 16, color: Colors.red),
+                                            const SizedBox(width: 12),
+                                            const Text('从库中移除', style: TextStyle(color: Colors.red)),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ).then((value) {
+                                    if (value == 'open') {
+                                      final success = _bookService.openBook(bookName);
+                                      if (!success) {
+                                        ErrorSnackbar.show(
+                                          context,
+                                          '页签数量已达上限（${_bookService.getMaxTabs()} 个），请先关闭部分标签页',
+                                        );
+                                      }
+                                    } else if (value == 'rename') {
+                                      _showRenameDialog(context, bookName);
+                                    } else if (value == 'remove') {
+                                      _showRemoveDialog(context, bookName);
+                                    }
+                                  });
+                                },
+                                child: BookCoverCard(
+                                  bookName: bookName,
+                                  coverPath: snapshot.data,
+                                  onTap: () {
+                                    final success = _bookService.openBook(bookName);
+                                    if (!success) {
+                                      ErrorSnackbar.show(
+                                        context,
+                                        '页签数量已达上限（${_bookService.getMaxTabs()} 个），请先关闭部分标签页',
+                                      );
+                                    }
+                                  },
+                                ),
+                              );
                             },
                           );
                         },
@@ -660,7 +788,7 @@ class CatalogPage extends StatelessWidget {
   }
 }
 
-/// 书籍内容显示页面
+/// 书籍内容显示页面（使用真实的 PDF 查看器）
 class BookContentView extends StatelessWidget {
   final String bookName;
   
@@ -668,53 +796,55 @@ class BookContentView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final readerEngine = ServiceLocator.get<IReaderEngine>();
+    final bookService = ServiceLocator.get<IBookService>();
+    final filePath = bookService.getBookFilePath(bookName);
     
-    // 这里应该使用 readerEngine 渲染内容
-    // 当前为简化实现
-    return Container(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            bookName,
-            style: const TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
+    if (filePath == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(FontAwesomeIcons.exclamationTriangle, size: 64, color: Colors.orange),
+            const SizedBox(height: 16),
+            Text(
+              '无法找到书籍文件：$bookName',
+              style: const TextStyle(fontSize: 16, color: Colors.grey),
             ),
-          ),
-          const SizedBox(height: 24),
-          const Divider(),
-          const SizedBox(height: 24),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildParagraph('这是 $bookName 的内容展示区域。'),
-                  _buildParagraph('当前为模拟内容，实际阅读功能将在后续阶段实现。'),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildParagraph(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontSize: 16,
-          height: 1.8,
+          ],
         ),
-      ),
+      );
+    }
+
+    return PdfViewerWidget(
+      bookName: bookName,
+      filePath: filePath,
     );
   }
+}
+
+/// 背景色配置
+const Map<String, String> _backgroundColors = {
+  'ffffff': '纯白',
+  'f5f5dc': '羊皮纸黄',
+  '000000': '深空黑',
+  'd8e7eb': '灰绿',
+  'e9faff': '浅蓝',
+  'ffffed': '明黄',
+  'eefaee': '淡绿',
+  'cce8cf': '草绿',
+  'fcefff': '红粉',
+  'c0d3d7': '仿墨水屏',
+  'd2b48c': '茶色',
+  'c0c0c0': '银色',
+  '00B800': '黑绿',
+  'f5f1e8': '浅黄',
+  '002b36': '午夜',
+  'd9e0e8': '浅灰',
+  '555555': '漆黑',
+};
+
+String _getBackgroundColorName(String color) {
+  return _backgroundColors[color] ?? color;
 }
 
 /// 设置页面
@@ -791,6 +921,88 @@ class SettingsPage extends StatelessWidget {
               }
             },
           ),
+          const SizedBox(height: 24),
+          // 阅读背景色选择
+          FutureBuilder<String>(
+            future: configService.getReadingBackgroundColor(),
+            builder: (context, snapshot) {
+              final currentColor = snapshot.data ?? 'ffffff';
+              return Card(
+                child: ListTile(
+                  leading: const Icon(FontAwesomeIcons.palette),
+                  title: const Text('阅读背景色'),
+                  subtitle: Text('当前：${_getBackgroundColorName(currentColor)}'),
+                  trailing: DropdownButton<String>(
+                    value: currentColor,
+                    items: _backgroundColors.entries.map((entry) {
+                      return DropdownMenuItem(
+                        value: entry.key,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 20,
+                              height: 20,
+                              decoration: BoxDecoration(
+                                color: Color(int.parse('FF${entry.key}', radix: 16)),
+                                border: Border.all(color: Colors.grey),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(entry.value),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        configService.setReadingBackgroundColor(value);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('已设置为：${_getBackgroundColorName(value)}')),
+                        );
+                      }
+                    },
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          // 字体大小调节
+          FutureBuilder<double>(
+            future: configService.getFontSize(),
+            builder: (context, snapshot) {
+              final fontSize = snapshot.data ?? 16.0;
+              return Card(
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const Icon(FontAwesomeIcons.font),
+                      title: const Text('字体大小'),
+                      subtitle: Text('当前：${fontSize.toInt()}px'),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Slider(
+                        value: fontSize,
+                        min: 12,
+                        max: 32,
+                        divisions: 20,
+                        label: '${fontSize.toInt()}px',
+                        onChanged: (value) {
+                          configService.setFontSize(value);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 24),
+          // 系统信息
+          const SystemInfoWidget(),
           const SizedBox(height: 16),
           // 清除封面缓存按钮
           Card(

@@ -23,4 +23,18 @@ abstract class IConfigService {
 
   /// 清除所有配置
   Future<void> clearAllConfig();
+
+  /// 获取阅读背景色（返回颜色值的字符串，如 "ffffff"）
+  Future<String> getReadingBackgroundColor();
+
+  /// 设置阅读背景色
+  /// [color] 颜色值的字符串（如 "ffffff"）
+  Future<void> setReadingBackgroundColor(String color);
+
+  /// 获取字体大小
+  Future<double> getFontSize();
+
+  /// 设置字体大小
+  /// [size] 字体大小
+  Future<void> setFontSize(double size);
 }
