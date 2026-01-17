@@ -1,8 +1,15 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'core/service_locator.dart';
+import 'domain/interfaces/i_book_service.dart';
+import 'domain/interfaces/i_config_service.dart';
+import 'domain/interfaces/i_reader_engine.dart';
+import 'presentation/widgets/error_snackbar.dart';
+import 'presentation/widgets/loading_overlay.dart';
+import 'presentation/widgets/book_cover_card.dart';
 
 /// 应用入口点
 void main() async {
@@ -25,8 +32,8 @@ void main() async {
     await windowManager.focus();
   });
   
-  // 初始化 BookManager 单例
-  await BookManager.instance.initialize();
+  // 初始化服务定位器（依赖注入）
+  await ServiceLocator.setup();
   
   runApp(const ReadBrainApp());
 }
@@ -42,6 +49,10 @@ class ReadBrainApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF2C3E50),
+          brightness: Brightness.light,
+        ),
       ),
       home: const MainScreen(),
       debugShowCheckedModeBanner: false,
@@ -61,30 +72,37 @@ class _MainScreenState extends State<MainScreen> {
   // 当前选中的导航项索引
   int _selectedNavIndex = 0;
   
-  // 导航项列表
+  // 导航项列表（使用 FontAwesome 图标）
   final List<NavItem> _navItems = [
-    NavItem(title: '书籍库', icon: Icons.library_books),
-    NavItem(title: '导入', icon: Icons.add_circle_outline),
-    NavItem(title: '目录', icon: Icons.menu_book),
-    NavItem(title: '设置', icon: Icons.settings),
+    NavItem(title: '书籍库', icon: FontAwesomeIcons.book),
+    NavItem(title: '导入', icon: FontAwesomeIcons.plusCircle),
+    NavItem(title: '目录', icon: FontAwesomeIcons.list),
+    NavItem(title: '设置', icon: FontAwesomeIcons.gear),
   ];
+
+  // 获取书籍服务
+  IBookService get _bookService => ServiceLocator.get<IBookService>();
 
   @override
   void initState() {
     super.initState();
-    // 监听 BookManager 的状态变化，以便更新 UI
-    BookManager.instance.addListener(_onBookManagerChanged);
+    // 监听书籍服务的状态变化
+    if (_bookService is ChangeNotifier) {
+      (_bookService as ChangeNotifier).addListener(_onBookServiceChanged);
+    }
   }
 
   @override
   void dispose() {
     // 移除监听器
-    BookManager.instance.removeListener(_onBookManagerChanged);
+    if (_bookService is ChangeNotifier) {
+      (_bookService as ChangeNotifier).removeListener(_onBookServiceChanged);
+    }
     super.dispose();
   }
 
-  /// BookManager 状态变化回调
-  void _onBookManagerChanged() {
+  /// 书籍服务状态变化回调
+  void _onBookServiceChanged() {
     setState(() {});
   }
 
@@ -93,13 +111,13 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       body: Row(
         children: [
-          // 左侧导航栏（200px 宽度）
+          // 左侧导航栏（200px 宽度，带呼吸灯效果）
           _buildNavigationBar(),
           // 右侧主内容区
           Expanded(
             child: Column(
               children: [
-                // 顶部标签页区域
+                // 顶部标签页区域（浏览器风格）
                 _buildTabBar(),
                 // 中间内容展示区
                 Expanded(
@@ -113,40 +131,41 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  /// 构建左侧导航栏
+  /// 构建左侧导航栏（带呼吸灯效果）
   Widget _buildNavigationBar() {
     return Container(
       width: 200,
-      color: Colors.grey[200],
+      decoration: BoxDecoration(
+        color: const Color(0xFF2C3E50),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(2, 0),
+          ),
+        ],
+      ),
       child: Column(
         children: [
+          // Logo 区域
+          Container(
+            padding: const EdgeInsets.all(20),
+            child: const Text(
+              'ReadBrain',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const Divider(color: Colors.white24, height: 1),
           // 导航项列表
           Expanded(
             child: ListView.builder(
               itemCount: _navItems.length,
               itemBuilder: (context, index) {
-                final item = _navItems[index];
-                final isSelected = _selectedNavIndex == index;
-                
-                return ListTile(
-                  leading: Icon(
-                    item.icon,
-                    color: isSelected ? Colors.blue : Colors.grey[700],
-                  ),
-                  title: Text(
-                    item.title,
-                    style: TextStyle(
-                      color: isSelected ? Colors.blue : Colors.grey[700],
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                  selected: isSelected,
-                  onTap: () {
-                    setState(() {
-                      _selectedNavIndex = index;
-                    });
-                  },
-                );
+                return _buildNavItem(_navItems[index], index);
               },
             ),
           ),
@@ -155,15 +174,68 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  /// 构建顶部标签页区域
+  /// 构建导航项（带呼吸灯效果）
+  Widget _buildNavItem(NavItem item, int index) {
+    final isSelected = _selectedNavIndex == index;
+    
+    return MouseRegion(
+      onEnter: (_) {
+        setState(() {});
+      },
+      onExit: (_) {
+        setState(() {});
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? Colors.white.withOpacity(0.2)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: isSelected
+              ? Border.all(color: Colors.white.withOpacity(0.3), width: 1)
+              : null,
+        ),
+        child: ListTile(
+          leading: Icon(
+            item.icon,
+            color: isSelected ? Colors.white : Colors.white70,
+            size: 20,
+          ),
+          title: Text(
+            item.title,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.white70,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              fontSize: 14,
+            ),
+          ),
+          selected: isSelected,
+          onTap: () {
+            setState(() {
+              _selectedNavIndex = index;
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  /// 构建顶部标签页区域（浏览器风格）
   Widget _buildTabBar() {
-    final openBooks = BookManager.instance.getOpenBooks();
-    final currentIndex = BookManager.instance.getCurrentIndex();
+    final openBooks = _bookService.getOpenBooks();
+    final currentIndex = _bookService.getCurrentIndex();
     
     if (openBooks.isEmpty) {
       return Container(
         height: 50,
-        color: Colors.grey[100],
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          border: Border(
+            bottom: BorderSide(color: Colors.grey[300]!, width: 1),
+          ),
+        ),
         child: const Center(
           child: Text(
             '暂无打开的书籍',
@@ -175,7 +247,12 @@ class _MainScreenState extends State<MainScreen> {
 
     return Container(
       height: 50,
-      color: Colors.grey[100],
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        border: Border(
+          bottom: BorderSide(color: Colors.grey[300]!, width: 1),
+        ),
+      ),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         itemCount: openBooks.length,
@@ -185,20 +262,27 @@ class _MainScreenState extends State<MainScreen> {
           
           return GestureDetector(
             onTap: () {
-              // 切换标签页
-              BookManager.instance.switchToBook(index);
+              _bookService.switchToBook(index);
             },
             child: Container(
               margin: const EdgeInsets.only(left: 4, top: 4, bottom: 4),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: isActive ? Colors.white : Colors.grey[300],
-                border: Border(
-                  bottom: BorderSide(
-                    color: isActive ? Colors.blue : Colors.transparent,
-                    width: 2,
-                  ),
+                color: isActive ? Colors.white : Colors.grey[200],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isActive ? Colors.blue[300]! : Colors.transparent,
+                  width: 1,
                 ),
+                boxShadow: isActive
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : null,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -207,21 +291,24 @@ class _MainScreenState extends State<MainScreen> {
                   Text(
                     bookName,
                     style: TextStyle(
-                      color: isActive ? Colors.blue : Colors.grey[700],
+                      color: isActive ? Colors.blue[700] : Colors.grey[700],
                       fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                      fontSize: 13,
                     ),
                   ),
                   const SizedBox(width: 8),
                   // 关闭按钮（X）
                   GestureDetector(
                     onTap: () {
-                      // 关闭标签页
-                      BookManager.instance.closeBook(index);
+                      _bookService.closeBook(index);
                     },
-                    child: Icon(
-                      Icons.close,
-                      size: 16,
-                      color: isActive ? Colors.blue : Colors.grey[600],
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      child: Icon(
+                        FontAwesomeIcons.xmark,
+                        size: 12,
+                        color: isActive ? Colors.grey[600] : Colors.grey[500],
+                      ),
                     ),
                   ),
                 ],
@@ -235,7 +322,7 @@ class _MainScreenState extends State<MainScreen> {
 
   /// 构建中间内容展示区
   Widget _buildContentArea() {
-    final currentBook = BookManager.instance.getCurrentBook();
+    final currentBook = _bookService.getCurrentBook();
     
     // 如果有打开的书籍，优先显示书籍内容
     if (currentBook != null) {
@@ -266,55 +353,103 @@ class NavItem {
   NavItem({required this.title, required this.icon});
 }
 
-/// 书籍库页面
-class BookLibraryPage extends StatelessWidget {
+/// 书籍库页面（使用 GridView）
+class BookLibraryPage extends StatefulWidget {
   const BookLibraryPage({super.key});
 
   @override
+  State<BookLibraryPage> createState() => _BookLibraryPageState();
+}
+
+class _BookLibraryPageState extends State<BookLibraryPage> {
+  IBookService get _bookService => ServiceLocator.get<IBookService>();
+
+  @override
+  void initState() {
+    super.initState();
+    if (_bookService is ChangeNotifier) {
+      (_bookService as ChangeNotifier).addListener(_onChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_bookService is ChangeNotifier) {
+      (_bookService as ChangeNotifier).removeListener(_onChanged);
+    }
+    super.dispose();
+  }
+
+  void _onChanged() {
+    setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final allBooks = BookManager.instance.getAllBooks();
+    final allBooks = _bookService.getAllBooks();
     
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '书籍库',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          Row(
+            children: [
+              const Icon(FontAwesomeIcons.book, size: 28),
+              const SizedBox(width: 12),
+              const Text(
+                '书籍库',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           Expanded(
             child: allBooks.isEmpty
-                ? const Center(
-                    child: Text(
-                      '暂无书籍，请点击"导入"添加书籍',
-                      style: TextStyle(color: Colors.grey),
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          FontAwesomeIcons.bookOpen,
+                          size: 64,
+                          color: Colors.grey[400],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          '暂无书籍，请点击"导入"添加书籍',
+                          style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                        ),
+                      ],
                     ),
                   )
-                : ListView.builder(
+                : GridView.builder(
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 4,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: 0.7,
+                    ),
                     itemCount: allBooks.length,
                     itemBuilder: (context, index) {
                       final bookName = allBooks[index];
-                      return ListTile(
-                        leading: const Icon(Icons.book),
-                        title: Text(bookName),
-                        trailing: ElevatedButton(
-                          onPressed: () {
-                            // 打开书籍
-                            final success = BookManager.instance.openBook(bookName);
-                            if (!success) {
-                              // 页签已达上限，显示提示
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('页签数量已达上限（${BookManager.maxTabs} 个），请先关闭部分标签页'),
-                                  duration: Duration(seconds: 2),
-                                ),
-                              );
-                            }
-                          },
-                          child: const Text('打开'),
-                        ),
+                      return FutureBuilder<String?>(
+                        future: _bookService.getCoverCachePath(bookName),
+                        builder: (context, snapshot) {
+                          return BookCoverCard(
+                            bookName: bookName,
+                            coverPath: snapshot.data,
+                            onTap: () {
+                              final success = _bookService.openBook(bookName);
+                              if (!success) {
+                                ErrorSnackbar.show(
+                                  context,
+                                  '页签数量已达上限（${_bookService.getMaxTabs()} 个），请先关闭部分标签页',
+                                );
+                              }
+                            },
+                          );
+                        },
                       );
                     },
                   ),
@@ -326,61 +461,124 @@ class BookLibraryPage extends StatelessWidget {
 }
 
 /// 导入页面
-class ImportPage extends StatelessWidget {
+class ImportPage extends StatefulWidget {
   const ImportPage({super.key});
 
   @override
+  State<ImportPage> createState() => _ImportPageState();
+}
+
+class _ImportPageState extends State<ImportPage> {
+  bool _isLoading = false;
+  IBookService get _bookService => ServiceLocator.get<IBookService>();
+
+  Future<void> _importBook() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      // 使用 file_picker 选择 PDF 文件
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        allowMultiple: false,
+      );
+
+      if (result == null || result.files.single.path == null) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final filePath = result.files.single.path!;
+
+      // 导入书籍
+      final result_either = await _bookService.importBook(filePath);
+      
+      setState(() {
+        _isLoading = false;
+      });
+
+      result_either.fold(
+        (error) {
+          ErrorSnackbar.show(context, error);
+        },
+        (bookName) {
+          ErrorSnackbar.showSuccess(context, '已导入：$bookName');
+          
+          // 自动打开书籍
+          final success = _bookService.openBook(bookName);
+          if (!success) {
+            ErrorSnackbar.show(
+              context,
+              '已导入：$bookName，但页签数量已达上限（${_bookService.getMaxTabs()} 个），请先关闭部分标签页',
+            );
+          }
+        },
+      );
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      ErrorSnackbar.show(context, '导入失败：$e');
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '导入书籍',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 32),
-          Center(
-            child: ElevatedButton.icon(
-              onPressed: () {
-                // 模拟导入：随机生成一个书名
-                final random = Random();
-                final bookNumber = random.nextInt(1000);
-                final bookName = '测试书籍$bookNumber.pdf';
-                
-                // 添加到书籍库
-                BookManager.instance.addBook(bookName);
-                
-                // 自动打开书籍
-                final success = BookManager.instance.openBook(bookName);
-                
-                // 显示提示
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(success 
-                        ? '已导入并打开：$bookName'
-                        : '已导入：$bookName，但页签数量已达上限（${BookManager.maxTabs} 个），请先关闭部分标签页'),
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.add),
-              label: const Text('模拟导入书籍'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+    return LoadingOverlay(
+      isLoading: _isLoading,
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(FontAwesomeIcons.plusCircle, size: 28),
+                const SizedBox(width: 12),
+                const Text(
+                  '导入书籍',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 48),
+            Center(
+              child: ElevatedButton.icon(
+                onPressed: _isLoading ? null : _importBook,
+                icon: const Icon(FontAwesomeIcons.filePdf),
+                label: const Text('选择 PDF 文件'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                  fontSize: 16,
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 32),
-          const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Text(
-              '说明：当前为模拟导入功能，点击按钮会随机生成一个测试书名并添加到书籍库。',
-              style: TextStyle(color: Colors.grey),
+            const SizedBox(height: 32),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(FontAwesomeIcons.circleInfo, color: Colors.blue[700]),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '支持导入 PDF 格式的书籍文件。导入后文件将保存到应用目录。',
+                      style: TextStyle(color: Colors.blue[900]),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -392,23 +590,41 @@ class CatalogPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final currentBook = BookManager.instance.getCurrentBook();
+    final bookService = ServiceLocator.get<IBookService>();
+    final currentBook = bookService.getCurrentBook();
     
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '目录',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          Row(
+            children: [
+              const Icon(FontAwesomeIcons.list, size: 28),
+              const SizedBox(width: 12),
+              const Text(
+                '目录',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           if (currentBook == null)
-            const Center(
-              child: Text(
-                '请先打开一本书籍',
-                style: TextStyle(color: Colors.grey),
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    FontAwesomeIcons.bookOpen,
+                    size: 64,
+                    color: Colors.grey[400],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    '请先打开一本书籍',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                  ),
+                ],
               ),
             )
           else
@@ -416,22 +632,22 @@ class CatalogPage extends StatelessWidget {
               child: ListView(
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.description),
+                    leading: const Icon(FontAwesomeIcons.fileLines),
                     title: const Text('第一章：开始'),
                     subtitle: Text('来自：$currentBook'),
                   ),
                   ListTile(
-                    leading: const Icon(Icons.description),
+                    leading: const Icon(FontAwesomeIcons.fileLines),
                     title: const Text('第二章：发展'),
                     subtitle: Text('来自：$currentBook'),
                   ),
                   ListTile(
-                    leading: const Icon(Icons.description),
+                    leading: const Icon(FontAwesomeIcons.fileLines),
                     title: const Text('第三章：高潮'),
                     subtitle: Text('来自：$currentBook'),
                   ),
                   ListTile(
-                    leading: const Icon(Icons.description),
+                    leading: const Icon(FontAwesomeIcons.fileLines),
                     title: const Text('第四章：结局'),
                     subtitle: Text('来自：$currentBook'),
                   ),
@@ -452,12 +668,15 @@ class BookContentView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final readerEngine = ServiceLocator.get<IReaderEngine>();
+    
+    // 这里应该使用 readerEngine 渲染内容
+    // 当前为简化实现
     return Container(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 书籍标题
           Text(
             bookName,
             style: const TextStyle(
@@ -468,7 +687,6 @@ class BookContentView extends StatelessWidget {
           const SizedBox(height: 24),
           const Divider(),
           const SizedBox(height: 24),
-          // 模拟书籍内容
           Expanded(
             child: SingleChildScrollView(
               child: Column(
@@ -476,9 +694,6 @@ class BookContentView extends StatelessWidget {
                 children: [
                   _buildParagraph('这是 $bookName 的内容展示区域。'),
                   _buildParagraph('当前为模拟内容，实际阅读功能将在后续阶段实现。'),
-                  _buildParagraph('您可以在这里看到书籍的文本内容、图片等内容。'),
-                  _buildParagraph('点击不同的标签页可以切换查看不同的书籍。'),
-                  _buildParagraph('每个标签页都会显示对应书籍的内容。'),
                 ],
               ),
             ),
@@ -488,7 +703,6 @@ class BookContentView extends StatelessWidget {
     );
   }
 
-  /// 构建段落文本
   Widget _buildParagraph(String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -509,268 +723,151 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final configService = ServiceLocator.get<IConfigService>();
+    final bookService = ServiceLocator.get<IBookService>();
+    
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '设置',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          Row(
+            children: [
+              const Icon(FontAwesomeIcons.gear, size: 28),
+              const SizedBox(width: 12),
+              const Text(
+                '设置',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+            ],
           ),
           const SizedBox(height: 32),
           // 启动时自动恢复状态开关
-          ValueListenableBuilder<bool>(
-            valueListenable: BookManager.instance.autoRestoreNotifier,
-            builder: (context, autoRestore, child) {
-              return SwitchListTile(
-                title: const Text('启动时自动恢复状态'),
-                subtitle: const Text('应用启动时自动恢复上次打开的书籍和标签页'),
-                value: autoRestore,
-                onChanged: (value) {
-                  BookManager.instance.setAutoRestore(value);
-                },
-              );
+          Builder(
+            builder: (context) {
+              // 获取 ConfigService 实例（需要访问 autoRestoreNotifier）
+              final configServiceInstance = configService;
+              // 由于接口中没有定义 autoRestoreNotifier，需要通过类型检查访问
+              if (configServiceInstance is dynamic && 
+                  configServiceInstance.autoRestoreNotifier != null) {
+                return ValueListenableBuilder<bool>(
+                  valueListenable: configServiceInstance.autoRestoreNotifier,
+                  builder: (context, autoRestore, child) {
+                    return Card(
+                      child: SwitchListTile(
+                        title: const Text('启动时自动恢复状态'),
+                        subtitle: const Text('应用启动时自动恢复上次打开的书籍和标签页'),
+                        value: autoRestore,
+                        onChanged: (value) async {
+                          await configService.setAutoRestore(value);
+                        },
+                      ),
+                    );
+                  },
+                );
+              } else {
+                // 降级方案：使用 FutureBuilder
+                return FutureBuilder<bool>(
+                  future: configService.getAutoRestore(),
+                  builder: (context, snapshot) {
+                    final autoRestore = snapshot.data ?? true;
+                    return Card(
+                      child: StatefulBuilder(
+                        builder: (context, setState) {
+                          return SwitchListTile(
+                            title: const Text('启动时自动恢复状态'),
+                            subtitle: const Text('应用启动时自动恢复上次打开的书籍和标签页'),
+                            value: autoRestore,
+                            onChanged: (value) async {
+                              await configService.setAutoRestore(value);
+                              setState(() {});
+                            },
+                          );
+                        },
+                      ),
+                    );
+                  },
+                );
+              }
             },
           ),
           const SizedBox(height: 16),
-          // 清除所有数据按钮
-          ElevatedButton(
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('确认清除'),
-                  content: const Text('确定要清除所有书籍数据吗？此操作不可恢复。'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('取消'),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        BookManager.instance.clearAllData();
-                        Navigator.of(context).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('已清除所有数据')),
-                        );
-                      },
-                      child: const Text('确定'),
-                    ),
-                  ],
+          // 清除封面缓存按钮
+          Card(
+            child: ListTile(
+              leading: const Icon(FontAwesomeIcons.trash),
+              title: const Text('清除封面缓存'),
+              subtitle: const Text('清除所有书籍的封面缓存'),
+              trailing: ElevatedButton(
+                onPressed: () async {
+                  try {
+                    final allBooks = bookService.getAllBooks();
+                    int successCount = 0;
+                    for (final book in allBooks) {
+                      final success = await bookService.clearCoverCache(book);
+                      if (success) successCount++;
+                    }
+                    if (mounted) {
+                      ErrorSnackbar.showSuccess(
+                        context,
+                        '已清除 $successCount 个封面缓存',
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ErrorSnackbar.show(context, '清除缓存失败：$e');
+                    }
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
                 ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+                child: const Text('清除'),
+              ),
             ),
-            child: const Text('清除所有数据'),
+          ),
+          const SizedBox(height: 16),
+          // 清除所有数据按钮
+          Card(
+            child: ListTile(
+              leading: const Icon(FontAwesomeIcons.triangleExclamation, color: Colors.red),
+              title: const Text('清除所有数据'),
+              subtitle: const Text('清除所有书籍数据和设置，此操作不可恢复'),
+              trailing: ElevatedButton(
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('确认清除'),
+                      content: const Text('确定要清除所有书籍数据吗？此操作不可恢复。'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('取消'),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            bookService.clearAllData();
+                            Navigator.of(context).pop();
+                            ErrorSnackbar.showSuccess(context, '已清除所有数据');
+                          },
+                          child: const Text('确定', style: TextStyle(color: Colors.red)),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('清除'),
+              ),
+            ),
           ),
         ],
       ),
     );
-  }
-}
-
-/// BookManager 单例类 - 管理书籍和标签页状态（Clean Architecture 核心逻辑层）
-class BookManager extends ChangeNotifier {
-  // 单例实例
-  static final BookManager _instance = BookManager._internal();
-  
-  /// 获取单例实例
-  static BookManager get instance => _instance;
-  
-  // 私有构造函数
-  BookManager._internal();
-
-  // 页签上限常量
-  static const int maxTabs = 10;
-
-  // 所有书籍列表（模拟书籍库）
-  final List<String> _allBooks = [];
-  
-  // 当前打开的书籍列表（标签页）
-  final List<String> _openBooks = [];
-  
-  // 当前选中的标签页索引
-  int _currentIndex = -1;
-  
-  // 自动恢复状态开关
-  bool _autoRestore = true;
-  
-  // SharedPreferences 实例
-  SharedPreferences? _prefs;
-  
-  // 自动恢复状态通知器（用于 UI 绑定）
-  final ValueNotifier<bool> autoRestoreNotifier = ValueNotifier<bool>(true);
-
-  /// 初始化 BookManager
-  Future<void> initialize() async {
-    // 加载 SharedPreferences
-    _prefs = await SharedPreferences.getInstance();
-    
-    // 加载自动恢复设置
-    _autoRestore = _prefs?.getBool('auto_restore') ?? true;
-    autoRestoreNotifier.value = _autoRestore;
-    
-    // 如果启用自动恢复，则恢复状态
-    if (_autoRestore) {
-      await _restoreState();
-    }
-  }
-
-  /// 恢复应用状态（从 SharedPreferences 加载）
-  Future<void> _restoreState() async {
-    if (_prefs == null) return;
-    
-    // 加载打开的书籍列表
-    final openBooksJson = _prefs!.getStringList('open_books');
-    if (openBooksJson != null && openBooksJson.isNotEmpty) {
-      _openBooks.clear();
-      _openBooks.addAll(openBooksJson);
-      
-      // 加载当前选中的索引
-      _currentIndex = _prefs!.getInt('current_index') ?? 0;
-      
-      // 确保索引有效
-      if (_currentIndex < 0 || _currentIndex >= _openBooks.length) {
-        _currentIndex = _openBooks.isNotEmpty ? 0 : -1;
-      }
-      
-      // 将打开的书籍也添加到书籍库（如果不存在）
-      for (final book in _openBooks) {
-        if (!_allBooks.contains(book)) {
-          _allBooks.add(book);
-        }
-      }
-      
-      notifyListeners();
-    }
-  }
-
-  /// 保存应用状态（到 SharedPreferences）
-  Future<void> _saveState() async {
-    if (_prefs == null) return;
-    
-    // 保存打开的书籍列表
-    await _prefs!.setStringList('open_books', _openBooks);
-    
-    // 保存当前选中的索引
-    await _prefs!.setInt('current_index', _currentIndex);
-    
-    // 保存自动恢复设置
-    await _prefs!.setBool('auto_restore', _autoRestore);
-  }
-
-  /// 添加书籍到书籍库
-  void addBook(String bookName) {
-    if (!_allBooks.contains(bookName)) {
-      _allBooks.add(bookName);
-      notifyListeners();
-    }
-  }
-
-  /// 获取所有书籍列表
-  List<String> getAllBooks() {
-    return List.unmodifiable(_allBooks);
-  }
-
-  /// 打开书籍（添加到标签页）
-  /// [bookName] 书籍名称
-  /// 返回 true 表示成功，false 表示失败（页签已达上限）
-  bool openBook(String bookName) {
-    // 检查页签上限
-    if (_openBooks.length >= maxTabs) {
-      // 返回 false 表示失败，由 UI 层处理提示
-      return false;
-    }
-    
-    // 如果书籍不在书籍库中，先添加到书籍库
-    if (!_allBooks.contains(bookName)) {
-      _allBooks.add(bookName);
-    }
-    
-    // 如果书籍已经打开，则切换到该标签页
-    final existingIndex = _openBooks.indexOf(bookName);
-    if (existingIndex != -1) {
-      _currentIndex = existingIndex;
-      notifyListeners();
-      _saveState();
-      return true;
-    }
-    
-    // 添加新标签页
-    _openBooks.add(bookName);
-    _currentIndex = _openBooks.length - 1;
-    
-    notifyListeners();
-    _saveState();
-    return true;
-  }
-
-  /// 关闭书籍（移除标签页）
-  /// [index] 要关闭的标签页索引
-  void closeBook(int index) {
-    if (index < 0 || index >= _openBooks.length) return;
-    
-    _openBooks.removeAt(index);
-    
-    // 调整当前索引
-    if (_openBooks.isEmpty) {
-      _currentIndex = -1;
-    } else if (_currentIndex >= _openBooks.length) {
-      _currentIndex = _openBooks.length - 1;
-    } else if (_currentIndex > index) {
-      _currentIndex--;
-    }
-    
-    notifyListeners();
-    _saveState();
-  }
-
-  /// 切换到指定标签页
-  /// [index] 标签页索引
-  void switchToBook(int index) {
-    if (index >= 0 && index < _openBooks.length) {
-      _currentIndex = index;
-      notifyListeners();
-      _saveState();
-    }
-  }
-
-  /// 获取当前打开的书籍列表
-  List<String> getOpenBooks() {
-    return List.unmodifiable(_openBooks);
-  }
-
-  /// 获取当前选中的标签页索引
-  int getCurrentIndex() {
-    return _currentIndex;
-  }
-
-  /// 获取当前选中的书籍名称
-  String? getCurrentBook() {
-    if (_currentIndex >= 0 && _currentIndex < _openBooks.length) {
-      return _openBooks[_currentIndex];
-    }
-    return null;
-  }
-
-  /// 设置自动恢复状态
-  /// [value] 是否自动恢复
-  void setAutoRestore(bool value) {
-    _autoRestore = value;
-    autoRestoreNotifier.value = value;
-    _saveState();
-  }
-
-  /// 清除所有数据
-  void clearAllData() {
-    _allBooks.clear();
-    _openBooks.clear();
-    _currentIndex = -1;
-    notifyListeners();
-    _saveState();
   }
 }

@@ -247,22 +247,47 @@ class BookService extends ChangeNotifier implements IBookService {
   Future<Either<String, String>> importBook(String filePath) async {
     try {
       // 检查文件是否存在
-      final file = File(filePath);
-      if (!await file.exists()) {
+      final sourceFile = File(filePath);
+      if (!await sourceFile.exists()) {
         return Left('文件不存在: $filePath');
       }
 
       // 获取文件名作为书籍名称
-      final bookName = file.path.split(Platform.pathSeparator).last;
+      final bookName = sourceFile.path.split(Platform.pathSeparator).last;
       
       // 检查书籍是否已存在
       if (_allBooks.contains(bookName)) {
-        return Right(bookName);
+        // 如果已存在，检查文件路径是否相同
+        final existingPath = _bookPaths[bookName];
+        if (existingPath == filePath || existingPath != null) {
+          return Right(bookName);
+        }
       }
+
+      // 获取应用文档目录
+      final appDir = await getApplicationDocumentsDirectory();
+      final booksDir = Directory('${appDir.path}/books');
+      
+      // 确保书籍目录存在
+      if (!await booksDir.exists()) {
+        await booksDir.create(recursive: true);
+      }
+
+      // 拷贝文件到应用目录
+      final targetPath = '${booksDir.path}/$bookName';
+      final targetFile = File(targetPath);
+      
+      // 如果目标文件已存在，先删除
+      if (await targetFile.exists()) {
+        await targetFile.delete();
+      }
+
+      // 拷贝文件
+      await sourceFile.copy(targetPath);
 
       // 尝试获取封面
       try {
-        final coverData = await _readerEngine.getCover(filePath);
+        final coverData = await _readerEngine.getCover(targetPath);
         if (coverData != null) {
           await saveCoverCache(bookName, coverData);
         }
@@ -273,8 +298,8 @@ class BookService extends ChangeNotifier implements IBookService {
       // 添加到书籍库
       addBook(bookName);
       
-      // 保存文件路径映射
-      _bookPaths[bookName] = filePath;
+      // 保存文件路径映射（保存应用内的路径）
+      _bookPaths[bookName] = targetPath;
       await _saveBookPaths();
 
       return Right(bookName);

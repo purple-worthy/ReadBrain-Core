@@ -5,7 +5,7 @@ abstract class IConfigService {
   Future<void> initialize();
 
   /// 获取自动恢复状态
-  bool getAutoRestore();
+  Future<bool> getAutoRestore();
 
   /// 设置自动恢复状态
   /// [value] 是否自动恢复

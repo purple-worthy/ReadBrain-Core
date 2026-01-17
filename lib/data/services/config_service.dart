@@ -37,7 +37,7 @@ class ConfigService implements IConfigService {
   }
 
   @override
-  bool getAutoRestore() {
+  Future<bool> getAutoRestore() async {
     return _autoRestore;
   }
 
